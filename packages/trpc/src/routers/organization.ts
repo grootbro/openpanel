@@ -13,6 +13,7 @@ import {
   zEditOrganization,
   zInviteUser,
   zUpdateMemberAccess,
+  zUpdateMemberRole,
 } from '@openpanel/validation';
 
 import { generateSecureId } from '@openpanel/common/server';
@@ -362,6 +363,58 @@ export const organizationRouter = createTRPCRouter({
           })),
         }),
       ]);
+    }),
+
+  updateMemberRole: protectedProcedure
+    .input(zUpdateMemberRole)
+    .mutation(async ({ input, ctx }) => {
+      if (input.userId === ctx.session.userId) {
+        throw new TRPCForbiddenError('You cannot update your own role');
+      }
+
+      const access = await getOrganizationAccess({
+        userId: ctx.session.userId,
+        organizationId: input.organizationId,
+      });
+
+      if (access?.role !== 'org:admin') {
+        throw new TRPCForbiddenError('You do not have access to this project');
+      }
+
+      const member = await db.member.findFirst({
+        where: {
+          userId: input.userId,
+          organizationId: input.organizationId,
+        },
+      });
+
+      if (!member) {
+        throw new TRPCBadRequestError('Member not found');
+      }
+
+      if (member.role === 'org:admin' && input.role === 'org:member') {
+        const adminCount = await db.member.count({
+          where: {
+            organizationId: input.organizationId,
+            role: 'org:admin',
+          },
+        });
+
+        if (adminCount <= 1) {
+          throw new TRPCBadRequestError(
+            'Cannot demote the last organization admin',
+          );
+        }
+      }
+
+      return db.member.update({
+        where: {
+          id: member.id,
+        },
+        data: {
+          role: input.role,
+        },
+      });
     }),
 
   members: protectedProcedure

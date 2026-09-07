@@ -112,7 +112,7 @@ export function useColumns() {
               pushModal('EditMember', row.original);
             }}
           >
-            Edit access
+            Edit member
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive"
