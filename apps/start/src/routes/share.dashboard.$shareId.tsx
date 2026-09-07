@@ -1,3 +1,4 @@
+import { useReportEmbedHeight } from '@/hooks/use-embed-viewport';
 import { ShareEnterPassword } from '@/components/auth/share-enter-password';
 import { FullPageEmptyState } from '@/components/full-page-empty-state';
 import FullPageLoadingState from '@/components/full-page-loading-state';
@@ -82,6 +83,7 @@ function RouteComponent() {
   const { header } = useSearch({ from: '/share/dashboard/$shareId' });
   const trpc = useTRPC();
   const { range, startDate, endDate, interval } = useOverviewOptions();
+  useReportEmbedHeight();
 
   const shareQuery = useSuspenseQuery(
     trpc.share.dashboard.queryOptions({
