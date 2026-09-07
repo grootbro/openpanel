@@ -31,12 +31,23 @@ describe('oauth allowed domains', () => {
     expect(getOAuthAllowedDomains('github')).toEqual([]);
   });
 
+  it('falls back to GOOGLE_ALLOWED_DOMAIN when GOOGLE_ALLOWED_DOMAINS is empty', () => {
+    vi.stubEnv('GOOGLE_ALLOWED_DOMAINS', '');
+    vi.stubEnv('GOOGLE_ALLOWED_DOMAIN', 'legacy.example');
+
+    expect(getOAuthAllowedDomains('google')).toEqual(['legacy.example']);
+  });
+
   it('extracts email domains case-insensitively', () => {
     expect(getEmailDomain('User@Example.COM')).toBe('example.com');
     expect(getEmailDomain('invalid-email')).toBeNull();
   });
 
   it('allows OAuth users when no allowlist is configured', () => {
+    vi.stubEnv('OAUTH_ALLOWED_DOMAINS', '');
+    vi.stubEnv('GOOGLE_ALLOWED_DOMAINS', '');
+    vi.stubEnv('GOOGLE_ALLOWED_DOMAIN', '');
+
     expect(
       isOAuthUserAllowedByDomain({
         provider: 'github',

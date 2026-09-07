@@ -23,9 +23,12 @@ export function getOAuthAllowedDomains(provider?: OAuthProvider) {
   }
 
   if (provider === 'google') {
-    return parseOAuthAllowedDomains(
-      process.env.GOOGLE_ALLOWED_DOMAINS ?? process.env.GOOGLE_ALLOWED_DOMAIN,
+    const googleDomains = parseOAuthAllowedDomains(
+      process.env.GOOGLE_ALLOWED_DOMAINS,
     );
+    return googleDomains.length > 0
+      ? googleDomains
+      : parseOAuthAllowedDomains(process.env.GOOGLE_ALLOWED_DOMAIN);
   }
 
   return [];
