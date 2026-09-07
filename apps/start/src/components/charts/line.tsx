@@ -92,8 +92,7 @@ export function Line({
   const pathMetricsKey = `${renderData.length}:${innerWidth}:${dashFromIndex}:${animate}`;
   const { pathLength, pathD } = usePathStrokeMetrics(pathRef, pathMetricsKey);
 
-  const reactId = useSvgId("line");
-  const gradientId = `line-gradient-${dataKey}-${reactId}`;
+  const gradientId = useSvgId(`line-gradient-${dataKey}`);
 
   const getY = useCallback(
     (d: Record<string, unknown>) => {
