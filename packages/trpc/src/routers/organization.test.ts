@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   dbMock,
+  txMock,
   getOrganizationAccessMock,
   getOrganizationsMock,
   getOrganizationByIdMock,
@@ -9,8 +10,21 @@ const {
   getInvitesMock,
   getInviteByIdMock,
   connectUserToOrganizationMock,
-} = vi.hoisted(() => ({
-  dbMock: {
+} = vi.hoisted(() => {
+  const txMock = {
+    member: {
+      findFirst: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    projectAccess: {
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
+    },
+  };
+
+  const dbMock = {
     member: {
       findFirst: vi.fn(),
       count: vi.fn(),
@@ -38,19 +52,24 @@ const {
     },
     $transaction: vi.fn(async (ops: unknown, _opts?: unknown) => {
       if (typeof ops === 'function') {
-        return (ops as (tx: typeof dbMock) => unknown)(dbMock);
+        return (ops as (tx: typeof txMock) => unknown)(txMock);
       }
       return Array.isArray(ops) ? Promise.all(ops) : ops;
     }),
-  },
-  getOrganizationAccessMock: vi.fn(),
-  getOrganizationsMock: vi.fn(),
-  getOrganizationByIdMock: vi.fn(),
-  getMembersMock: vi.fn(),
-  getInvitesMock: vi.fn(),
-  getInviteByIdMock: vi.fn(),
-  connectUserToOrganizationMock: vi.fn(),
-}));
+  };
+
+  return {
+    dbMock,
+    txMock,
+    getOrganizationAccessMock: vi.fn(),
+    getOrganizationsMock: vi.fn(),
+    getOrganizationByIdMock: vi.fn(),
+    getMembersMock: vi.fn(),
+    getInvitesMock: vi.fn(),
+    getInviteByIdMock: vi.fn(),
+    connectUserToOrganizationMock: vi.fn(),
+  };
+});
 
 getOrganizationAccessMock.clear = vi.fn().mockResolvedValue(1);
 
@@ -107,8 +126,8 @@ beforeEach(() => {
 
 describe('organization.updateMemberRole', () => {
   it('promotes a member to org:admin', async () => {
-    dbMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
-    dbMock.member.update.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
+    txMock.member.update.mockResolvedValue({
       ...MEMBER_ROW,
       role: 'org:admin',
     });
@@ -119,10 +138,11 @@ describe('organization.updateMemberRole', () => {
       role: 'org:admin',
     });
 
-    expect(dbMock.member.update).toHaveBeenCalledWith({
+    expect(txMock.member.update).toHaveBeenCalledWith({
       where: { id: MEMBER_ROW.id },
       data: { role: 'org:admin' },
     });
+    expect(dbMock.member.update).not.toHaveBeenCalled();
     expect(result.role).toBe('org:admin');
   });
 
@@ -149,12 +169,12 @@ describe('organization.updateMemberRole', () => {
   });
 
   it('refuses to demote the last organization admin', async () => {
-    dbMock.member.findFirst.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue({
       ...MEMBER_ROW,
       userId: 'other-admin',
       role: 'org:admin',
     });
-    dbMock.member.count.mockResolvedValue(1);
+    txMock.member.count.mockResolvedValue(1);
 
     await expect(
       adminCaller().updateMemberRole({
@@ -164,17 +184,17 @@ describe('organization.updateMemberRole', () => {
       }),
     ).rejects.toThrow('last organization admin');
 
-    expect(dbMock.member.update).not.toHaveBeenCalled();
+    expect(txMock.member.update).not.toHaveBeenCalled();
   });
 
   it('demotes an admin when another admin remains', async () => {
-    dbMock.member.findFirst.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue({
       ...MEMBER_ROW,
       userId: 'other-admin',
       role: 'org:admin',
     });
-    dbMock.member.count.mockResolvedValue(2);
-    dbMock.member.update.mockResolvedValue({
+    txMock.member.count.mockResolvedValue(2);
+    txMock.member.update.mockResolvedValue({
       ...MEMBER_ROW,
       userId: 'other-admin',
       role: 'org:member',
@@ -187,12 +207,13 @@ describe('organization.updateMemberRole', () => {
     });
 
     expect(result.role).toBe('org:member');
-    expect(dbMock.member.update).toHaveBeenCalled();
+    expect(txMock.member.update).toHaveBeenCalled();
+    expect(dbMock.member.update).not.toHaveBeenCalled();
   });
 
   it('clears cached organization access for the updated member', async () => {
-    dbMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
-    dbMock.member.update.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
+    txMock.member.update.mockResolvedValue({
       ...MEMBER_ROW,
       role: 'org:admin',
     });
@@ -210,13 +231,13 @@ describe('organization.updateMemberRole', () => {
   });
 
   it('runs the last-admin check and role update in one transaction', async () => {
-    dbMock.member.findFirst.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue({
       ...MEMBER_ROW,
       userId: 'other-admin',
       role: 'org:admin',
     });
-    dbMock.member.count.mockResolvedValue(2);
-    dbMock.member.update.mockResolvedValue({
+    txMock.member.count.mockResolvedValue(2);
+    txMock.member.update.mockResolvedValue({
       ...MEMBER_ROW,
       userId: 'other-admin',
       role: 'org:member',
@@ -229,20 +250,22 @@ describe('organization.updateMemberRole', () => {
     });
 
     expect(dbMock.$transaction).toHaveBeenCalled();
-    const txArg = dbMock.$transaction.mock.calls[0]?.[0];
-    expect(typeof txArg).toBe('function');
+    expect(txMock.member.count).toHaveBeenCalled();
+    expect(txMock.member.update).toHaveBeenCalled();
+    expect(dbMock.member.count).not.toHaveBeenCalled();
+    expect(dbMock.member.update).not.toHaveBeenCalled();
   });
 });
 
 describe('organization.updateMember', () => {
   it('updates role and project access in one transaction', async () => {
-    dbMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
-    dbMock.member.update.mockResolvedValue({
+    txMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
+    txMock.member.update.mockResolvedValue({
       ...MEMBER_ROW,
       role: 'org:admin',
     });
-    dbMock.projectAccess.deleteMany.mockResolvedValue({ count: 0 });
-    dbMock.projectAccess.createMany.mockResolvedValue({ count: 1 });
+    txMock.projectAccess.deleteMany.mockResolvedValue({ count: 0 });
+    txMock.projectAccess.createMany.mockResolvedValue({ count: 1 });
 
     await adminCaller().updateMember({
       organizationId: ORG_ID,
@@ -252,9 +275,11 @@ describe('organization.updateMember', () => {
     });
 
     expect(dbMock.$transaction).toHaveBeenCalled();
-    expect(dbMock.member.update).toHaveBeenCalled();
-    expect(dbMock.projectAccess.deleteMany).toHaveBeenCalled();
-    expect(dbMock.projectAccess.createMany).toHaveBeenCalled();
+    expect(txMock.member.update).toHaveBeenCalled();
+    expect(txMock.projectAccess.deleteMany).toHaveBeenCalled();
+    expect(txMock.projectAccess.createMany).toHaveBeenCalled();
+    expect(dbMock.member.update).not.toHaveBeenCalled();
+    expect(dbMock.projectAccess.deleteMany).not.toHaveBeenCalled();
     expect(getOrganizationAccessMock.clear).toHaveBeenCalledWith({
       userId: MEMBER_USER_ID,
       organizationId: ORG_ID,
