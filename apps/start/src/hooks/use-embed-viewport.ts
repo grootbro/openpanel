@@ -56,11 +56,12 @@ export function measureEmbedContentHeight(
     ? null
     : document.querySelector('[data-openpanel-embed-root]'),
 ): number {
-  if (root instanceof HTMLElement) {
-    return Math.ceil(root.getBoundingClientRect().height);
-  }
+  // Guard before `instanceof HTMLElement` — that global is missing without a DOM.
   if (typeof document === 'undefined') {
     return 0;
+  }
+  if (root instanceof HTMLElement) {
+    return Math.ceil(root.getBoundingClientRect().height);
   }
   const body = document.body;
   if (!body) {
