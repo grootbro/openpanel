@@ -10,6 +10,6 @@ describe('measureEmbedContentHeight', () => {
     vi.stubGlobal('document', undefined);
     vi.stubGlobal('HTMLElement', undefined);
 
-    expect(measureEmbedContentHeight(null)).toBe(0);
+    expect(measureEmbedContentHeight()).toBe(0);
   });
 });
