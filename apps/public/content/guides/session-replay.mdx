@@ -80,6 +80,7 @@ The replay script (`op1-replay.js`) is fetched automatically alongside the main 
 
 ```ts title="op.ts"
 import { OpenPanel } from '@openpanel/web';
+import { startReplayRecorder } from '@openpanel/web/replay';
 
 const op = new OpenPanel({
   clientId: 'YOUR_CLIENT_ID',
@@ -87,9 +88,12 @@ const op = new OpenPanel({
   trackOutgoingLinks: true,
   sessionReplay: {
     enabled: true,
+    recorder: startReplayRecorder,
   },
 });
 ```
+
+Import `startReplayRecorder` from `@openpanel/web/replay` and pass it as `recorder`. Apps that never import that subpath do not ship rrweb.
 
 With the npm package, the replay module is a dynamic import resolved by your bundler. It is automatically code-split from your main bundle—if you don't enable replay, the module is never included.
 
