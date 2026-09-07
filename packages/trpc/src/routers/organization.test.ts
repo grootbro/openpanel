@@ -36,9 +36,12 @@ const {
     user: {
       findFirst: vi.fn(),
     },
-    $transaction: vi.fn((ops: unknown) =>
-      Array.isArray(ops) ? Promise.all(ops) : ops,
-    ),
+    $transaction: vi.fn(async (ops: unknown, _opts?: unknown) => {
+      if (typeof ops === 'function') {
+        return (ops as (tx: typeof dbMock) => unknown)(dbMock);
+      }
+      return Array.isArray(ops) ? Promise.all(ops) : ops;
+    }),
   },
   getOrganizationAccessMock: vi.fn(),
   getOrganizationsMock: vi.fn(),
@@ -48,6 +51,8 @@ const {
   getInviteByIdMock: vi.fn(),
   connectUserToOrganizationMock: vi.fn(),
 }));
+
+getOrganizationAccessMock.clear = vi.fn().mockResolvedValue(1);
 
 vi.mock('@openpanel/db', () => ({
   db: dbMock,
@@ -183,5 +188,76 @@ describe('organization.updateMemberRole', () => {
 
     expect(result.role).toBe('org:member');
     expect(dbMock.member.update).toHaveBeenCalled();
+  });
+
+  it('clears cached organization access for the updated member', async () => {
+    dbMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
+    dbMock.member.update.mockResolvedValue({
+      ...MEMBER_ROW,
+      role: 'org:admin',
+    });
+
+    await adminCaller().updateMemberRole({
+      organizationId: ORG_ID,
+      userId: MEMBER_USER_ID,
+      role: 'org:admin',
+    });
+
+    expect(getOrganizationAccessMock.clear).toHaveBeenCalledWith({
+      userId: MEMBER_USER_ID,
+      organizationId: ORG_ID,
+    });
+  });
+
+  it('runs the last-admin check and role update in one transaction', async () => {
+    dbMock.member.findFirst.mockResolvedValue({
+      ...MEMBER_ROW,
+      userId: 'other-admin',
+      role: 'org:admin',
+    });
+    dbMock.member.count.mockResolvedValue(2);
+    dbMock.member.update.mockResolvedValue({
+      ...MEMBER_ROW,
+      userId: 'other-admin',
+      role: 'org:member',
+    });
+
+    await adminCaller().updateMemberRole({
+      organizationId: ORG_ID,
+      userId: 'other-admin',
+      role: 'org:member',
+    });
+
+    expect(dbMock.$transaction).toHaveBeenCalled();
+    const txArg = dbMock.$transaction.mock.calls[0]?.[0];
+    expect(typeof txArg).toBe('function');
+  });
+});
+
+describe('organization.updateMember', () => {
+  it('updates role and project access in one transaction', async () => {
+    dbMock.member.findFirst.mockResolvedValue(MEMBER_ROW);
+    dbMock.member.update.mockResolvedValue({
+      ...MEMBER_ROW,
+      role: 'org:admin',
+    });
+    dbMock.projectAccess.deleteMany.mockResolvedValue({ count: 0 });
+    dbMock.projectAccess.createMany.mockResolvedValue({ count: 1 });
+
+    await adminCaller().updateMember({
+      organizationId: ORG_ID,
+      userId: MEMBER_USER_ID,
+      role: 'org:admin',
+      access: [{ projectId: 'proj-1', level: 'write' }],
+    });
+
+    expect(dbMock.$transaction).toHaveBeenCalled();
+    expect(dbMock.member.update).toHaveBeenCalled();
+    expect(dbMock.projectAccess.deleteMany).toHaveBeenCalled();
+    expect(dbMock.projectAccess.createMany).toHaveBeenCalled();
+    expect(getOrganizationAccessMock.clear).toHaveBeenCalledWith({
+      userId: MEMBER_USER_ID,
+      organizationId: ORG_ID,
+    });
   });
 });

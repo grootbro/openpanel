@@ -39,68 +39,30 @@ export default function EditMember(member: EditMemberProps) {
     trpc.project.list.queryOptions({ organizationId: member.organizationId }),
   );
 
-  const invalidateMembers = () =>
-    queryClient.invalidateQueries(trpc.organization.members.pathFilter());
-
-  const updateAccess = useMutation(
-    trpc.organization.updateMemberAccess.mutationOptions({
+  const mutation = useMutation(
+    trpc.organization.updateMember.mutationOptions({
       onError(error) {
         handleError(error);
         setAccess(toGrants());
-      },
-    }),
-  );
-
-  const updateRole = useMutation(
-    trpc.organization.updateMemberRole.mutationOptions({
-      onError(error) {
-        handleError(error);
         setRole(member.role === 'org:admin' ? 'org:admin' : 'org:member');
+      },
+      onSuccess() {
+        toast.success('Member updated');
+        queryClient.invalidateQueries(trpc.organization.members.pathFilter());
+        popModal();
       },
     }),
   );
 
   const projects = projectsQuery.data ?? [];
-  const isPending = updateAccess.isPending || updateRole.isPending;
-  const roleChanged = role !== member.role;
 
   const memberName = member.user
     ? [member.user.firstName, member.user.lastName].filter(Boolean).join(' ')
     : null;
 
-  const onSave = async () => {
-    if (!member.user) {
-      return;
-    }
-
-    try {
-      if (roleChanged) {
-        await updateRole.mutateAsync({
-          userId: member.user.id,
-          organizationId: member.organizationId,
-          role,
-        });
-      }
-
-      await updateAccess.mutateAsync({
-        userId: member.user.id,
-        organizationId: member.organizationId,
-        access,
-      });
-
-      toast.success('Member updated');
-      invalidateMembers();
-      popModal();
-    } catch {
-      // Errors are handled by each mutation's onError.
-    }
-  };
-
   return (
     <ModalContent>
-      <ModalHeader
-        title={memberName ? `Edit ${memberName}` : 'Edit member'}
-      />
+      <ModalHeader title={memberName ? `Edit ${memberName}` : 'Edit member'} />
 
       <div className="col gap-4">
         <div>
@@ -135,7 +97,20 @@ export default function EditMember(member: EditMemberProps) {
           <Button type="button" variant="outline" onClick={() => popModal()}>
             Cancel
           </Button>
-          <Button onClick={onSave} disabled={isPending || !member.user}>
+          <Button
+            onClick={() => {
+              if (!member.user) {
+                return;
+              }
+              mutation.mutate({
+                userId: member.user.id,
+                organizationId: member.organizationId,
+                role,
+                access,
+              });
+            }}
+            disabled={mutation.isPending || !member.user}
+          >
             Save
           </Button>
         </ButtonContainer>

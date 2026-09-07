@@ -12,6 +12,7 @@ import {
 import {
   zEditOrganization,
   zInviteUser,
+  zUpdateMember,
   zUpdateMemberAccess,
   zUpdateMemberRole,
 } from '@openpanel/validation';
@@ -381,40 +382,135 @@ export const organizationRouter = createTRPCRouter({
         throw new TRPCForbiddenError('You do not have access to this project');
       }
 
-      const member = await db.member.findFirst({
-        where: {
-          userId: input.userId,
-          organizationId: input.organizationId,
+      const updated = await db.$transaction(
+        async (tx) => {
+          const member = await tx.member.findFirst({
+            where: {
+              userId: input.userId,
+              organizationId: input.organizationId,
+            },
+          });
+
+          if (!member) {
+            throw new TRPCBadRequestError('Member not found');
+          }
+
+          if (member.role === 'org:admin' && input.role === 'org:member') {
+            const adminCount = await tx.member.count({
+              where: {
+                organizationId: input.organizationId,
+                role: 'org:admin',
+              },
+            });
+
+            if (adminCount <= 1) {
+              throw new TRPCBadRequestError(
+                'Cannot demote the last organization admin',
+              );
+            }
+          }
+
+          return tx.member.update({
+            where: {
+              id: member.id,
+            },
+            data: {
+              role: input.role,
+            },
+          });
         },
+        { isolationLevel: 'Serializable' },
+      );
+
+      await getOrganizationAccess.clear({
+        userId: input.userId,
+        organizationId: input.organizationId,
       });
 
-      if (!member) {
-        throw new TRPCBadRequestError('Member not found');
+      return updated;
+    }),
+
+  /** Role + project access in one transaction (Members edit modal). */
+  updateMember: protectedProcedure
+    .input(zUpdateMember)
+    .mutation(async ({ input, ctx }) => {
+      if (input.userId === ctx.session.userId) {
+        throw new TRPCForbiddenError('You cannot update your own membership');
       }
 
-      if (member.role === 'org:admin' && input.role === 'org:member') {
-        const adminCount = await db.member.count({
-          where: {
-            organizationId: input.organizationId,
-            role: 'org:admin',
-          },
-        });
-
-        if (adminCount <= 1) {
-          throw new TRPCBadRequestError(
-            'Cannot demote the last organization admin',
-          );
-        }
-      }
-
-      return db.member.update({
-        where: {
-          id: member.id,
-        },
-        data: {
-          role: input.role,
-        },
+      const access = await getOrganizationAccess({
+        userId: ctx.session.userId,
+        organizationId: input.organizationId,
       });
+
+      if (access?.role !== 'org:admin') {
+        throw new TRPCForbiddenError('You do not have access to this project');
+      }
+
+      const updated = await db.$transaction(
+        async (tx) => {
+          const member = await tx.member.findFirst({
+            where: {
+              userId: input.userId,
+              organizationId: input.organizationId,
+            },
+          });
+
+          if (!member) {
+            throw new TRPCBadRequestError('Member not found');
+          }
+
+          if (member.role === 'org:admin' && input.role === 'org:member') {
+            const adminCount = await tx.member.count({
+              where: {
+                organizationId: input.organizationId,
+                role: 'org:admin',
+              },
+            });
+
+            if (adminCount <= 1) {
+              throw new TRPCBadRequestError(
+                'Cannot demote the last organization admin',
+              );
+            }
+          }
+
+          const memberRow = await tx.member.update({
+            where: {
+              id: member.id,
+            },
+            data: {
+              role: input.role,
+            },
+          });
+
+          await tx.projectAccess.deleteMany({
+            where: {
+              userId: input.userId,
+              organizationId: input.organizationId,
+            },
+          });
+
+          await tx.projectAccess.createMany({
+            data: input.access.map((grant) => ({
+              userId: input.userId,
+              organizationId: input.organizationId,
+              projectId: grant.projectId,
+              level: grant.level,
+            })),
+          });
+
+          return memberRow;
+        },
+        { isolationLevel: 'Serializable' },
+      );
+
+      await getOrganizationAccess.clear({
+        userId: input.userId,
+        organizationId: input.organizationId,
+      });
+
+      return updated;
     }),
 
   members: protectedProcedure
