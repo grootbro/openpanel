@@ -17,12 +17,9 @@
 
   function viewportFor(iframe) {
     const rect = iframe.getBoundingClientRect();
-    const visibleTop = Math.max(0, -rect.top);
+    const visibleTop = Math.min(rect.height, Math.max(0, -rect.top));
     const visibleBottom = Math.min(rect.height, window.innerHeight - rect.top);
-    const visibleHeight = Math.max(
-      0,
-      visibleBottom - visibleTop,
-    ) || Math.min(rect.height, window.innerHeight);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
     return { visibleTop, visibleHeight };
   }
 
@@ -51,6 +48,12 @@
         iframe.style.height = `${next}px`;
         iframe.setAttribute('height', String(next));
       }
+      if (event.source) {
+        event.source.postMessage(
+          { source: SOURCE, type: 'resize-ack', height: next },
+          '*',
+        );
+      }
       return;
     }
 
@@ -63,6 +66,17 @@
     for (const iframe of iframes()) {
       if (iframe.contentWindow) {
         replyViewport(iframe, iframe.contentWindow);
+      }
+    }
+  }
+
+  function pingIframes() {
+    for (const iframe of iframes()) {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage(
+          { source: SOURCE, type: 'request-resize' },
+          '*',
+        );
       }
     }
   }
@@ -80,7 +94,16 @@
       if (!iframe.style.border) {
         iframe.style.border = '0';
       }
+      iframe.addEventListener('load', () => {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.postMessage(
+            { source: SOURCE, type: 'request-resize' },
+            '*',
+          );
+        }
+      });
     }
+    pingIframes();
   }
 
   if (document.readyState === 'loading') {

@@ -17,6 +17,18 @@ describe('viewportFromIframeRect', () => {
       viewportFromIframeRect({ top: 100, bottom: 900, height: 800 }, 1000),
     ).toEqual({ visibleTop: 0, visibleHeight: 800 });
   });
+
+  it('returns zero height when the iframe is fully above the parent viewport', () => {
+    expect(
+      viewportFromIframeRect({ top: -2000, bottom: -200, height: 1800 }, 800),
+    ).toEqual({ visibleTop: 1800, visibleHeight: 0 });
+  });
+
+  it('returns zero height when the iframe is fully below the parent viewport', () => {
+    expect(
+      viewportFromIframeRect({ top: 1200, bottom: 2200, height: 1000 }, 800),
+    ).toEqual({ visibleTop: 0, visibleHeight: 0 });
+  });
 });
 
 describe('embeddedDialogCenterY', () => {

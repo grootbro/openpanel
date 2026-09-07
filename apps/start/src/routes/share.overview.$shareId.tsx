@@ -100,7 +100,7 @@ function RouteComponent() {
     header !== '0' && header !== 0 && header !== 'false' && header !== false;
 
   return (
-    <div>
+    <div data-openpanel-embed-root>
       {isHeaderVisible && (
         <div className="mx-auto max-w-7xl">
           <LoginNavbar className="relative p-4" />

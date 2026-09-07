@@ -94,11 +94,18 @@ export default function ShareOverviewModal() {
     toast('Link copied to clipboard');
   };
 
-  const handleCopyEmbed = () => {
-    navigator.clipboard.writeText(embedCode);
-    setCopiedEmbed(true);
-    setTimeout(() => setCopiedEmbed(false), 2000);
-    toast('Embed code copied to clipboard');
+  const handleCopyEmbed = async () => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(embedCode);
+      setCopiedEmbed(true);
+      setTimeout(() => setCopiedEmbed(false), 2000);
+      toast('Embed code copied to clipboard');
+    } catch {
+      toast('Could not copy embed code');
+    }
   };
 
   const handleMakePrivate = () => {

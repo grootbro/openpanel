@@ -6,6 +6,9 @@ import { useEmbedViewport, isInIframe } from '@/hooks/use-embed-viewport';
 import { embeddedDialogCenterY } from '@/utils/embed-viewport';
 import { cn } from '@/lib/utils';
 
+const overlayClassName =
+  'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50';
+
 function Dialog({
   modal,
   ...props
@@ -44,9 +47,10 @@ function DialogOverlay({
   style,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+  const embedded = typeof window !== 'undefined' && isInIframe();
   const viewport = useEmbedViewport();
   const embeddedStyle =
-    viewport != null
+    viewport != null && viewport.visibleHeight > 0
       ? {
           top: viewport.visibleTop,
           height: viewport.visibleHeight,
@@ -54,14 +58,23 @@ function DialogOverlay({
         }
       : undefined;
 
+  // Radix drops Overlay when modal={false}; paint our own so embeds keep a backdrop.
+  if (embedded) {
+    return (
+      <div
+        data-slot="dialog-overlay"
+        aria-hidden
+        className={cn(overlayClassName, className)}
+        style={{ ...embeddedStyle, ...style }}
+      />
+    );
+  }
+
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
-        className,
-      )}
-      style={{ ...embeddedStyle, ...style }}
+      className={cn(overlayClassName, className)}
+      style={style}
       {...props}
     />
   );
@@ -78,7 +91,7 @@ function DialogContent({
 }) {
   const viewport = useEmbedViewport();
   const embeddedStyle =
-    viewport != null
+    viewport != null && viewport.visibleHeight > 0
       ? {
           top: embeddedDialogCenterY(viewport),
           maxHeight: Math.min(viewport.visibleHeight * 0.9, 720),

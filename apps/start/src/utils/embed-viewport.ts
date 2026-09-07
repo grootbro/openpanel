@@ -35,11 +35,11 @@ export function viewportFromIframeRect(
   rect: { top: number; bottom: number; height: number },
   parentInnerHeight: number,
 ): EmbedViewport {
-  const visibleTop = Math.max(0, -rect.top);
+  const visibleTop = Math.min(rect.height, Math.max(0, -rect.top));
   const visibleBottom = Math.min(rect.height, parentInnerHeight - rect.top);
   const visibleHeight = Math.max(0, visibleBottom - visibleTop);
   return {
     visibleTop,
-    visibleHeight: visibleHeight || Math.min(rect.height, parentInnerHeight),
+    visibleHeight,
   };
 }

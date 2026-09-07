@@ -16,6 +16,12 @@ type ViewportMessage = {
   visibleHeight: number;
 };
 
+type ResizeAckMessage = {
+  source: typeof SOURCE;
+  type: 'resize-ack';
+  height: number;
+};
+
 function isViewportMessage(data: unknown): data is ViewportMessage {
   if (!data || typeof data !== 'object') {
     return false;
@@ -27,6 +33,48 @@ function isViewportMessage(data: unknown): data is ViewportMessage {
     typeof msg.visibleTop === 'number' &&
     typeof msg.visibleHeight === 'number'
   );
+}
+
+function isResizeAckMessage(data: unknown): data is ResizeAckMessage {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+  const msg = data as Record<string, unknown>;
+  return (
+    msg.source === SOURCE &&
+    msg.type === 'resize-ack' &&
+    typeof msg.height === 'number'
+  );
+}
+
+/**
+ * Height of the share content itself — not documentElement.scrollHeight, which
+ * floors at the iframe viewport and can never shrink after the host expands.
+ */
+export function measureEmbedContentHeight(
+  root: Element | null | undefined = typeof document === 'undefined'
+    ? null
+    : document.querySelector('[data-openpanel-embed-root]'),
+): number {
+  if (root instanceof HTMLElement) {
+    return Math.ceil(root.getBoundingClientRect().height);
+  }
+  if (typeof document === 'undefined') {
+    return 0;
+  }
+  const body = document.body;
+  if (!body) {
+    return 0;
+  }
+  let maxBottom = 0;
+  for (const child of Array.from(body.children)) {
+    if (!(child instanceof HTMLElement)) {
+      continue;
+    }
+    const rect = child.getBoundingClientRect();
+    maxBottom = Math.max(maxBottom, rect.bottom);
+  }
+  return Math.ceil(Math.max(0, maxBottom - body.getBoundingClientRect().top));
 }
 
 /**
@@ -70,37 +118,89 @@ export function useEmbedViewport(): EmbedViewport | null {
   return viewport;
 }
 
-/** Report document height to the parent embed host. */
+/** Report content height to the parent embed host until acknowledged. */
 export function useReportEmbedHeight(enabled = true) {
   useEffect(() => {
     if (!enabled || !isInIframe()) {
       return;
     }
 
+    let acked = false;
+    let lastHeight = -1;
+    let retries = 0;
+    let retryTimer: number | undefined;
+
     const publish = () => {
-      const height = Math.ceil(
-        Math.max(
-          document.documentElement.scrollHeight,
-          document.body?.scrollHeight ?? 0,
-        ),
-      );
+      const height = measureEmbedContentHeight();
+      lastHeight = height;
       window.parent.postMessage(
         { source: SOURCE, type: 'resize', height },
         '*',
       );
     };
 
+    const scheduleRetry = () => {
+      if (acked || retries >= 20) {
+        return;
+      }
+      retries += 1;
+      retryTimer = window.setTimeout(() => {
+        publish();
+        scheduleRetry();
+      }, 200);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (!isResizeAckMessage(event.data)) {
+        return;
+      }
+      if (event.data.height === lastHeight) {
+        acked = true;
+        if (retryTimer !== undefined) {
+          window.clearTimeout(retryTimer);
+        }
+      }
+    };
+
+    const onHostPing = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        data &&
+        typeof data === 'object' &&
+        (data as { source?: string; type?: string }).source === SOURCE &&
+        (data as { type?: string }).type === 'request-resize'
+      ) {
+        publish();
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    window.addEventListener('message', onHostPing);
     publish();
-    const ro = new ResizeObserver(publish);
-    ro.observe(document.documentElement);
-    if (document.body) {
+    scheduleRetry();
+
+    const root = document.querySelector('[data-openpanel-embed-root]');
+    const ro = new ResizeObserver(() => {
+      acked = false;
+      retries = 0;
+      publish();
+      scheduleRetry();
+    });
+    if (root) {
+      ro.observe(root);
+    } else if (document.body) {
       ro.observe(document.body);
     }
     window.addEventListener('load', publish);
 
     return () => {
-      ro.disconnect();
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('message', onHostPing);
       window.removeEventListener('load', publish);
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+      ro.disconnect();
     };
   }, [enabled]);
 }
