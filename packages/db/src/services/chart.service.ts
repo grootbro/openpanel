@@ -462,6 +462,26 @@ export function rewriteProfilePropertyRefs(sql: string, keys: string[]): string 
   return out;
 }
 
+function profileEventWindow({
+  projectId,
+  startDate,
+  endDate,
+  event,
+}: Pick<IGetChartDataInput, 'projectId' | 'startDate' | 'endDate' | 'event'>) {
+  const conditions = [`project_id = ${sqlstring.escape(projectId)}`];
+  if (startDate) {
+    conditions.push(`created_at >= toDateTime('${formatClickhouseDate(startDate)}')`);
+  }
+  if (endDate) {
+    conditions.push(`created_at <= toDateTime('${formatClickhouseDate(endDate)}')`);
+  }
+  if (event.name !== '*') {
+    conditions.push(`name = ${sqlstring.escape(event.name)}`);
+  }
+  // Filter by the join key before FINAL without excluding profiles updated outside the event window.
+  return `id IN (SELECT profile_id FROM ${TABLE_NAMES.events} WHERE ${conditions.join(' AND ')})`;
+}
+
 export async function getChartSql({
   event,
   breakdowns: initialBreakdowns,
@@ -691,7 +711,8 @@ export async function getChartSql({
       'profile',
       `SELECT ${selectFields.join(', ')}
       FROM ${TABLE_NAMES.profiles} FINAL
-      WHERE project_id = ${sqlstring.escape(projectId)}`
+      WHERE project_id = ${sqlstring.escape(projectId)}
+      AND ${profileEventWindow({ projectId, startDate, endDate, event })}`
     );
 
     // Use the CTE reference in the main query
@@ -1073,7 +1094,8 @@ export async function getAggregateChartSql({
       'profile',
       `SELECT ${selectFields.join(', ')}
       FROM ${TABLE_NAMES.profiles} FINAL
-      WHERE project_id = ${sqlstring.escape(projectId)}`
+      WHERE project_id = ${sqlstring.escape(projectId)}
+      AND ${profileEventWindow({ projectId, startDate, endDate, event })}`
     );
 
     sb.joins.profiles = profilesJoinRef;
