@@ -9,7 +9,8 @@ import {
   type IReportInput,
 } from '@openpanel/validation';
 import sqlstring from 'sqlstring';
-import { formatClickhouseDate, TABLE_NAMES } from '../clickhouse/client';
+import { ch, formatClickhouseDate, TABLE_NAMES } from '../clickhouse/client';
+import { clix } from '../clickhouse/query-builder';
 import { db } from '../prisma-client';
 import { createSqlBuilder } from '../sql-builder';
 import { buildTypedClause, hasTypedCast, isTypedOperator } from './filter-cast';
@@ -468,18 +469,22 @@ function profileEventWindow({
   endDate,
   event,
 }: Pick<IGetChartDataInput, 'projectId' | 'startDate' | 'endDate' | 'event'>) {
-  const conditions = [`project_id = ${sqlstring.escape(projectId)}`];
+  const query = clix(ch)
+    .select(['profile_id'])
+    .from(TABLE_NAMES.events)
+    .where('project_id', '=', projectId);
   if (startDate) {
-    conditions.push(`created_at >= toDateTime('${formatClickhouseDate(startDate)}')`);
+    query.where('created_at', '>=', clix.datetime(startDate, 'toDateTime'));
   }
   if (endDate) {
-    conditions.push(`created_at <= toDateTime('${formatClickhouseDate(endDate)}')`);
+    query.where('created_at', '<=', clix.datetime(endDate, 'toDateTime'));
   }
   if (event.name !== '*') {
-    conditions.push(`name = ${sqlstring.escape(event.name)}`);
+    // Event names must remain string literals, even when they look like dates.
+    query.where('name', '=', clix.exp(sqlstring.escape(event.name)));
   }
   // Filter by the join key before FINAL without excluding profiles updated outside the event window.
-  return `id IN (SELECT profile_id FROM ${TABLE_NAMES.events} WHERE ${conditions.join(' AND ')})`;
+  return `id IN (${query.toSQL()})`;
 }
 
 export async function getChartSql({

@@ -729,7 +729,7 @@ describe('chart.service / profile event window', () => {
         projectId: PROJECT_ID,
         timezone: 'UTC',
       });
-      expect(sql).toContain(`id IN (SELECT profile_id FROM events WHERE project_id = '${PROJECT_ID}' AND created_at >= toDateTime('${formatClickhouseDate('2026-09-01 00:00:00')}') AND created_at <= toDateTime('${formatClickhouseDate('2026-09-02 00:00:00')}') AND name = 'screen_view')`);
+      expect(sql).toContain(`id IN (SELECT profile_id FROM events WHERE project_id = '${PROJECT_ID}' AND created_at >= toDateTime('${formatClickhouseDate('2026-09-01 00:00:00')}') AND created_at <= toDateTime('${formatClickhouseDate('2026-09-02 00:00:00')}') AND name = ('screen_view'))`);
       expect(sql).toContain('FROM profiles FINAL');
       if (chReachable) await explain(sql);
     });
