@@ -66,8 +66,9 @@ export default function EditMember(member: EditMemberProps) {
 
       <div className="col gap-4">
         <div>
-          <Label>Organization role</Label>
+          <Label id="edit-member-role-label">Organization role</Label>
           <RadioGroup
+            aria-labelledby="edit-member-role-label"
             value={role}
             onValueChange={(value) => setRole(value as OrgRole)}
             className="mt-2 flex gap-4"
